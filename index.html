@@ -4,18 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Seguimiento a Tareas - ACTIVA</title>
-  
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    .anim-fade { animation: fadeIn 200ms ease-out; }
+    .anim-slide-up { animation: slideUp 220ms ease-out; }
+    .anim-slide-in-right { animation: slideInRight 200ms ease-out; }
+  </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useMemo, useRef, useEffect } = React;
+    const { useState, useMemo, useRef, useEffect, useCallback } = React;
 
     const INITIAL_TASKS = [];
 
@@ -39,17 +48,29 @@
       "Indicadores": "indicadores.png"
     };
 
-    const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzVfa5IF2L728f-tRSlT270ZEsg1RDJ9BX7htrnGzD_3MlNthdew-UIIu3lXw6taRY/exec"; 
+    const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzVfa5IF2L728f-tRSlT270ZEsg1RDJ9BX7htrnGzD_3MlNthdew-UIIu3lXw6taRY/exec";
+
+    // Generación de IDs robusta (evita colisiones en concurrencia)
+    function generateTaskId() {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return "TAREA-" + crypto.randomUUID();
+      }
+      return "TAREA-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
+    }
+
+    // -------------------------------------------------------------------------
+    // Componentes de gráficas (sin cambios funcionales)
+    // -------------------------------------------------------------------------
 
     const GaugeChart = ({ value, total }) => {
       const radius = 90;
-      const circumference = Math.PI * radius; 
+      const circumference = Math.PI * radius;
       const percentage = total === 0 ? 0 : (value / total);
       const dashoffset = circumference - (percentage * circumference);
 
       return (
         <div className="relative flex flex-col items-center justify-center h-48 w-64">
-          <svg className="w-full h-full" viewBox="0 0 200 120">
+          <svg className="w-full h-full" viewBox="0 0 200 120" aria-hidden="true">
             <path d="M 10 100 A 90 90 0 0 1 190 100" fill="none" stroke="#e5e7eb" strokeWidth="20" strokeLinecap="butt" />
             <path
               d="M 10 100 A 90 90 0 0 1 190 100"
@@ -63,7 +84,7 @@
             />
           </svg>
           <div className="absolute bottom-6 flex items-baseline space-x-1">
-            <span className="text-5xl font-semibold text-black">{value}</span>
+            <span className="text-5xl font-semibold text-black" aria-label={`${value} de ${total} tareas completas`}>{value}</span>
           </div>
           <div className="absolute bottom-2 left-2 text-sm text-gray-500">0</div>
           <div className="absolute bottom-2 right-2 text-sm text-gray-500">{total}</div>
@@ -74,13 +95,13 @@
     const DoughnutChart = ({ data }) => {
       let cumulativePercent = 0;
       const total = data.reduce((acc, d) => acc + d.value, 0);
-      
+
       if (total === 0) return <div className="h-48 flex items-center justify-center text-gray-400">Sin datos</div>;
 
       return (
         <div className="flex items-center h-48 w-full gap-4">
           <div className="w-32 h-32 relative">
-            <svg viewBox="0 0 42 42" className="w-full h-full transform -rotate-90">
+            <svg viewBox="0 0 42 42" className="w-full h-full transform -rotate-90" aria-hidden="true">
               <circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#e5e7eb" strokeWidth="6"></circle>
               {data.map(slice => {
                 const percent = (slice.value / total) * 100;
@@ -128,6 +149,7 @@
               <div
                 className="w-full max-w-[40px] bg-[#1a8241] rounded-t transition-all duration-1000 ease-out relative hover:bg-green-600"
                 style={{ height: `${(item.value / max) * 100}%`, minHeight: item.value > 0 ? '4px' : '0' }}
+                aria-label={`${item.label}: ${item.value}`}
               >
                  <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap">
                     {item.value} {item.value === 1 ? 'tarea' : 'tareas'}
@@ -142,6 +164,41 @@
       );
     };
 
+    // -------------------------------------------------------------------------
+    // Toast / Notificación
+    // -------------------------------------------------------------------------
+
+    const Toast = ({ message, type, onClose }) => {
+      useEffect(() => {
+        if (type === "success") {
+          const t = setTimeout(onClose, 3500);
+          return () => clearTimeout(t);
+        }
+      }, [type, onClose]);
+
+      const styles = type === "error"
+        ? "bg-red-50 border-red-200 text-red-800"
+        : type === "success"
+          ? "bg-green-50 border-green-200 text-green-800"
+          : "bg-blue-50 border-blue-200 text-blue-800";
+
+      const iconName = type === "error" ? "alert-circle" : type === "success" ? "check-circle" : "info";
+
+      return (
+        <div className={`fixed bottom-6 right-6 z-[60] max-w-sm border rounded-xl shadow-lg p-4 flex items-start gap-3 anim-slide-in-right ${styles}`} role="alert">
+          <i data-lucide={iconName} className="w-5 h-5 flex-shrink-0 mt-0.5"></i>
+          <div className="flex-1 text-sm">{message}</div>
+          <button onClick={onClose} aria-label="Cerrar notificación" className="text-current opacity-60 hover:opacity-100 transition-opacity">
+            <i data-lucide="x" className="w-4 h-4"></i>
+          </button>
+        </div>
+      );
+    };
+
+    // -------------------------------------------------------------------------
+    // App
+    // -------------------------------------------------------------------------
+
     function App() {
       const [tasks, setTasks] = useState(INITIAL_TASKS);
       const [indicadoresList, setIndicadoresList] = useState([]);
@@ -149,24 +206,50 @@
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingTask, setEditingTask] = useState(null);
       const [isSyncing, setIsSyncing] = useState(false);
-      const [isLoadingInitial, setIsLoadingInitial] = useState(true); // Control visual de carga inicial
+      const [isLoadingInitial, setIsLoadingInitial] = useState(true);
       const [columnFilters, setColumnFilters] = useState({});
       const [modalAvance, setModalAvance] = useState(0);
-      
+      const [toast, setToast] = useState(null); // {message, type}
+
       const [activeFilter, setActiveFilter] = useState(null);
       const [filterSearch, setFilterSearch] = useState("");
       const filterRef = useRef(null);
+      const modalRef = useRef(null);
 
-      useEffect(() => {
-        lucide.createIcons();
-      });
+      const showToast = useCallback((message, type = "info") => {
+        setToast({ message, type, key: Date.now() });
+      }, []);
 
       const openModal = (task = null) => {
         setEditingTask(task);
-        setModalAvance(task ? parseInt(task.avance) || 0 : 0);
+        setModalAvance(task ? parseInt(task.avance, 10) || 0 : 0);
         setIsModalOpen(true);
       };
 
+      const closeModal = useCallback(() => {
+        setIsModalOpen(false);
+        setEditingTask(null);
+      }, []);
+
+      // Re-renderiza íconos solo cuando hay cambios estructurales del DOM,
+      // no en cada render del componente.
+      useEffect(() => {
+        if (typeof lucide !== "undefined") lucide.createIcons();
+      }, [tasks, selectedDept, isModalOpen, activeFilter, columnFilters, isSyncing, isLoadingInitial, toast]);
+
+      // ESC cierra el modal y los dropdowns de filtro
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.key === "Escape") {
+            if (isModalOpen) closeModal();
+            else if (activeFilter) setActiveFilter(null);
+          }
+        };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+      }, [isModalOpen, activeFilter, closeModal]);
+
+      // Click fuera del filtro lo cierra
       useEffect(() => {
         const handleClickOutside = (event) => {
           if (filterRef.current && !filterRef.current.contains(event.target)) {
@@ -177,25 +260,38 @@
         return () => document.removeEventListener("mousedown", handleClickOutside);
       }, []);
 
+      // Carga inicial con AbortController
       useEffect(() => {
+        const controller = new AbortController();
+
         const fetchFromGoogleSheets = async () => {
-          if (!GOOGLE_SHEETS_WEBAPP_URL) return;
+          if (!GOOGLE_SHEETS_WEBAPP_URL) {
+            setIsLoadingInitial(false);
+            return;
+          }
           setIsSyncing(true);
           try {
-            const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL);
+            const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, { signal: controller.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (data.tasks && data.tasks.length > 0) setTasks(data.tasks);
-            if (data.indicadores && data.indicadores.length > 0) setIndicadoresList(data.indicadores);
+            if (data.status === "error") throw new Error(data.message || "Error del servidor");
+            if (Array.isArray(data.tasks)) setTasks(data.tasks);
+            if (Array.isArray(data.indicadores)) setIndicadoresList(data.indicadores);
           } catch (error) {
-            console.error("Error al cargar datos automáticos:", error);
+            if (error.name !== "AbortError") {
+              console.error("Error al cargar datos:", error);
+              showToast(`No se pudo cargar la base de datos: ${error.message}`, "error");
+            }
           } finally {
             setIsSyncing(false);
             setIsLoadingInitial(false);
           }
         };
         fetchFromGoogleSheets();
-      }, []);
+        return () => controller.abort();
+      }, [showToast]);
 
+      // Filtrado de tareas
       const filteredTasks = useMemo(() => {
         let result = tasks;
         if (selectedDept !== "Todas las Tareas" && selectedDept !== "Indicadores") {
@@ -203,27 +299,55 @@
         }
         Object.keys(columnFilters).forEach(key => {
           const selectedValues = columnFilters[key];
-          if (selectedValues && Array.isArray(selectedValues)) {
+          if (Array.isArray(selectedValues)) {
             result = result.filter(t => selectedValues.includes(t[key]?.toString() || ""));
           }
         });
         return result;
       }, [tasks, selectedDept, columnFilters]);
 
-      const hasActiveFilters = Object.keys(columnFilters).length > 0;
-      const totalTasks = filteredTasks.length;
-      const completedTasks = filteredTasks.filter(t => t.estado === 'Finalizado' || parseInt(t.avance) === 100).length;
-      const inProgressTasks = filteredTasks.filter(t => t.estado === 'En Progreso').length;
-      const delayedTasks = filteredTasks.filter(t => t.estado === 'Retrasado').length;
-      const pendingTasks = filteredTasks.filter(t => t.estado === 'Pendiente').length;
-      const completionPercentage = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+      // Estadísticas en un solo recorrido
+      const taskStats = useMemo(() => {
+        const stats = { completed: 0, inProgress: 0, delayed: 0, pending: 0, total: filteredTasks.length };
+        for (const t of filteredTasks) {
+          const avance = parseInt(t.avance, 10) || 0;
+          if (t.estado === "Finalizado" || avance === 100) stats.completed++;
+          else if (t.estado === "En Progreso") stats.inProgress++;
+          else if (t.estado === "Retrasado") stats.delayed++;
+          else if (t.estado === "Pendiente") stats.pending++;
+        }
+        return stats;
+      }, [filteredTasks]);
 
-      const statusData = [
-        { label: 'Finalizado', value: completedTasks, color: '#1a8241' }, 
-        { label: 'En Progreso', value: inProgressTasks, color: '#3b82f6' }, 
-        { label: 'Pendiente', value: pendingTasks, color: '#facc15' }, 
-        { label: 'Retrasado', value: delayedTasks, color: '#ef4444' } 
-      ];
+      // Mapa de valores únicos por columna (memoizado, una sola pasada)
+      const uniqueValuesByColumn = useMemo(() => {
+        const cols = ["responsablePrincipal", "responsableSecundario", "indicador",
+                      "compromiso", "fechaInicio", "fechaFin", "estado",
+                      "observaciones", "avance", "contexto"];
+        const map = {};
+        cols.forEach(c => { map[c] = new Set(); });
+        for (const t of tasks) {
+          cols.forEach(c => map[c].add((t[c] ?? "").toString()));
+        }
+        const sorter = (a, b) => {
+          const na = Number(a), nb = Number(b);
+          if (!isNaN(na) && !isNaN(nb) && a !== "" && b !== "") return na - nb;
+          return a.localeCompare(b, "es");
+        };
+        const result = {};
+        cols.forEach(c => { result[c] = [...map[c]].sort(sorter); });
+        return result;
+      }, [tasks]);
+
+      const hasActiveFilters = Object.keys(columnFilters).length > 0;
+      const completionPercentage = taskStats.total === 0 ? 0 : Math.round((taskStats.completed / taskStats.total) * 100);
+
+      const statusData = useMemo(() => ([
+        { label: "Finalizado", value: taskStats.completed, color: "#1a8241" },
+        { label: "En Progreso", value: taskStats.inProgress, color: "#3b82f6" },
+        { label: "Pendiente", value: taskStats.pending, color: "#facc15" },
+        { label: "Retrasado", value: taskStats.delayed, color: "#ef4444" }
+      ]), [taskStats]);
 
       const areaData = useMemo(() => {
         const counts = {};
@@ -237,19 +361,19 @@
       const renderIndicatorDashboard = () => {
         const stats = {};
         tasks.forEach(t => {
-          const ind = t.indicador && t.indicador.trim() !== "" ? t.indicador : 'Sin Asignar';
+          const ind = t.indicador && t.indicador.trim() !== "" ? t.indicador : "Sin Asignar";
           if (!stats[ind]) stats[ind] = { totalAvance: 0, count: 0, completed: 0 };
-          stats[ind].totalAvance += (parseInt(t.avance) || 0);
+          stats[ind].totalAvance += (parseInt(t.avance, 10) || 0);
           stats[ind].count += 1;
-          if(t.estado === 'Finalizado' || parseInt(t.avance) === 100) stats[ind].completed += 1;
+          if (t.estado === "Finalizado" || parseInt(t.avance, 10) === 100) stats[ind].completed += 1;
         });
-        
+
         const chartData = Object.keys(stats).map(k => ({
           label: k,
           value: Math.round(stats[k].totalAvance / stats[k].count),
           count: stats[k].count,
           completed: stats[k].completed
-        })).sort((a,b) => b.value - a.value);
+        })).sort((a, b) => b.value - a.value);
 
         return (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -275,7 +399,7 @@
                 {chartData.length === 0 && <p className="text-xs text-gray-500">No hay indicadores registrados en las tareas.</p>}
               </div>
             </div>
-            
+
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
               <h3 className="text-sm font-bold text-[#1a8241] flex items-center gap-2 mb-6">
                <i data-lucide="bar-chart" className="w-5 h-5"></i> Tareas por Indicador
@@ -286,72 +410,117 @@
         );
       };
 
+      // ---------------------------------------------------------------------
+      // Save / Delete con UI optimista + rollback ante fallo
+      // ---------------------------------------------------------------------
+
       const handleSaveTask = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        
-        // Creamos la tarea. IMPORTANTE: Generamos un ID en el frontend si es nueva
+
         const newTask = {
-          id: editingTask ? editingTask.id : "TAREA-" + new Date().getTime(),
-          responsablePrincipal: formData.get('responsablePrincipal'),
-          responsableSecundario: formData.get('responsableSecundario'),
-          compromiso: formData.get('compromiso'),
-          fechaInicio: formData.get('fechaInicio'),
-          fechaFin: formData.get('fechaFin'),
-          estado: formData.get('estado'),
-          observaciones: formData.get('observaciones'),
-          avance: parseInt(formData.get('avance') || '0', 10),
-          contexto: formData.get('contexto'),
-          indicador: formData.get('indicador')
+          id: editingTask ? editingTask.id : generateTaskId(),
+          responsablePrincipal: formData.get("responsablePrincipal") || "",
+          responsableSecundario: formData.get("responsableSecundario") || "",
+          compromiso: (formData.get("compromiso") || "").trim(),
+          fechaInicio: formData.get("fechaInicio") || "",
+          fechaFin: formData.get("fechaFin") || "",
+          estado: formData.get("estado") || "Pendiente",
+          observaciones: formData.get("observaciones") || "",
+          avance: parseInt(formData.get("avance") || "0", 10),
+          contexto: formData.get("contexto") || "",
+          indicador: formData.get("indicador") || ""
         };
 
-        const newTasks = editingTask 
+        // Validación cliente
+        if (!newTask.compromiso) {
+          showToast("El compromiso es obligatorio", "error");
+          return;
+        }
+
+        // Snapshot para posible rollback
+        const previousTasks = tasks;
+        const wasEditing = !!editingTask;
+        const newTasks = wasEditing
           ? tasks.map(t => t.id === editingTask.id ? newTask : t)
           : [...tasks, newTask];
-          
+
         setTasks(newTasks);
         setIsModalOpen(false);
+        setEditingTask(null);
         setIsSyncing(true);
-        
-        // ENVIAMOS EL PAYLOAD SEGURO DE "ACCIÓN"
-        if (GOOGLE_SHEETS_WEBAPP_URL) {
-          try {
-            await fetch(GOOGLE_SHEETS_WEBAPP_URL, { 
-              method: 'POST', 
-              body: JSON.stringify({ action: 'save', task: newTask }) 
-            });
-          } catch (error) {
-            console.error("Error al guardar en Sheets");
-          } finally {
-            setIsSyncing(false);
+
+        if (!GOOGLE_SHEETS_WEBAPP_URL) {
+          setIsSyncing(false);
+          showToast("Configuración faltante: URL del backend", "error");
+          return;
+        }
+
+        try {
+          const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "save", task: newTask })
+          });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const result = await response.json();
+          if (result.status === "error") {
+            throw new Error(result.message || "Error desconocido del servidor");
           }
+
+          showToast(wasEditing ? "Tarea actualizada" : "Tarea creada", "success");
+        } catch (error) {
+          console.error("Error al guardar:", error);
+          // Rollback
+          setTasks(previousTasks);
+          // Reabrir el modal con la tarea para que el usuario no pierda el trabajo
+          setEditingTask(newTask);
+          setModalAvance(newTask.avance);
+          setIsModalOpen(true);
+          showToast(`No se pudo guardar: ${error.message}. Tu trabajo no se perdió.`, "error");
+        } finally {
+          setIsSyncing(false);
         }
       };
 
       const handleDelete = async (id) => {
-        if(window.confirm("¿Estás seguro de eliminar esta tarea?")) {
-          setTasks(tasks.filter(t => t.id !== id));
-          setIsSyncing(true);
-          
-          // ENVIAMOS EL PAYLOAD SEGURO DE "ACCIÓN"
-          if (GOOGLE_SHEETS_WEBAPP_URL) {
-            try {
-              await fetch(GOOGLE_SHEETS_WEBAPP_URL, { 
-                method: 'POST', 
-                body: JSON.stringify({ action: 'delete', id: id }) 
-              });
-            } catch (error) {
-               console.error("Error al eliminar en Sheets");
-            } finally {
-              setIsSyncing(false);
-            }
-          }
+        if (!window.confirm("¿Estás seguro de eliminar esta tarea?")) return;
+
+        const previousTasks = tasks;
+        setTasks(tasks.filter(t => t.id !== id));
+        setIsSyncing(true);
+
+        if (!GOOGLE_SHEETS_WEBAPP_URL) {
+          setIsSyncing(false);
+          return;
+        }
+
+        try {
+          const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "delete", id: id })
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const result = await response.json();
+          if (result.status === "error") throw new Error(result.message || "Error del servidor");
+
+          showToast("Tarea eliminada", "success");
+        } catch (error) {
+          console.error("Error al eliminar:", error);
+          setTasks(previousTasks); // rollback
+          showToast(`No se pudo eliminar: ${error.message}`, "error");
+        } finally {
+          setIsSyncing(false);
         }
       };
 
+      // ---------------------------------------------------------------------
+      // Header con filtro estilo Excel
+      // ---------------------------------------------------------------------
+
       const renderHeader = (columnKey, title, extraClasses = "") => {
-        const uniqueValues = [...new Set(tasks.map(t => t[columnKey]?.toString() || ""))].sort();
-        
+        const uniqueValues = uniqueValuesByColumn[columnKey] || [];
+
         const isFilterActive = columnFilters[columnKey] !== undefined;
         const currentSelected = columnFilters[columnKey] || uniqueValues;
         const filteredOptions = uniqueValues.filter(val => val.toLowerCase().includes(filterSearch.toLowerCase()));
@@ -363,7 +532,7 @@
            } else {
              newSelected = [...currentSelected, val];
            }
-           
+
            if (newSelected.length === uniqueValues.length) {
               const newFilters = {...columnFilters};
               delete newFilters[columnKey];
@@ -383,25 +552,44 @@
            setColumnFilters({...columnFilters, [columnKey]: []});
         };
 
+        const dropdownId = `filter-dropdown-${columnKey}`;
+
         return (
-          <th key={columnKey} className={`p-3 border-r border-green-600/50 relative cursor-pointer select-none ${extraClasses}`} ref={activeFilter === columnKey ? filterRef : null}>
-             <div className="flex justify-between items-center group" onClick={() => {
-                if (activeFilter === columnKey) setActiveFilter(null);
-                else { setActiveFilter(columnKey); setFilterSearch(""); }
-             }}>
+          <th key={columnKey}
+              className={`p-3 border-r border-green-600/50 relative select-none ${extraClasses}`}
+              ref={activeFilter === columnKey ? filterRef : null}
+              scope="col">
+             <button
+                type="button"
+                className="flex justify-between items-center w-full group focus:outline-none focus:ring-2 focus:ring-yellow-300 rounded"
+                onClick={() => {
+                  if (activeFilter === columnKey) setActiveFilter(null);
+                  else { setActiveFilter(columnKey); setFilterSearch(""); }
+                }}
+                aria-haspopup="true"
+                aria-expanded={activeFilter === columnKey}
+                aria-controls={dropdownId}
+              >
                <span className="uppercase">{title}</span>
                <i data-lucide="filter" className={`w-3.5 h-3.5 transition-colors ${isFilterActive ? "text-yellow-300 opacity-100" : "opacity-40 group-hover:opacity-80"}`}></i>
-             </div>
-             
+             </button>
+
              {activeFilter === columnKey && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-lg w-56 z-50 text-gray-800 font-normal cursor-default" onClick={e => e.stopPropagation()}>
+                <div
+                  id={dropdownId}
+                  className="absolute top-full left-0 mt-1 bg-white border border-gray-200 shadow-xl rounded-lg w-56 z-50 text-gray-800 font-normal cursor-default"
+                  onClick={e => e.stopPropagation()}
+                  role="dialog"
+                  aria-label={`Filtrar columna ${title}`}
+                >
                    <div className="p-2 border-b border-gray-100">
-                      <input 
-                        type="text" 
-                        placeholder="Buscar..." 
+                      <input
+                        type="text"
+                        placeholder="Buscar..."
                         className="w-full border border-gray-300 p-1.5 text-xs rounded-md focus:outline-none focus:ring-1 focus:ring-[#1a8241]"
                         value={filterSearch}
                         onChange={e => setFilterSearch(e.target.value)}
+                        aria-label="Buscar valor en filtro"
                       />
                    </div>
                    <div className="p-2 border-b border-gray-100 flex justify-between text-xs text-[#1a8241]">
@@ -414,9 +602,9 @@
                       ) : (
                          filteredOptions.map(val => (
                            <label key={val} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 p-1.5 rounded-md">
-                              <input 
-                                type="checkbox" 
-                                checked={currentSelected.includes(val)} 
+                              <input
+                                type="checkbox"
+                                checked={currentSelected.includes(val)}
                                 onChange={() => handleToggleValue(val)}
                                 className="accent-[#1a8241] w-3.5 h-3.5 rounded-sm"
                               />
@@ -434,16 +622,20 @@
         );
       };
 
+      // ---------------------------------------------------------------------
+      // Render principal
+      // ---------------------------------------------------------------------
+
       return (
         <div className="min-h-screen bg-[#f8f9fa] font-sans text-gray-800 flex flex-col">
-          
+
           <header className="bg-[#e0e1dd] py-3 px-6 flex justify-between items-center border-b border-gray-200 shadow-sm z-20">
             <div className="flex items-center gap-4">
-              <img 
-                src="logo.png" 
-                alt="Logo ACTIVA" 
-                className="h-10 w-auto" 
-                onError={(e) => e.target.style.display = 'none'} 
+              <img
+                src="logo.png"
+                alt="Logo ACTIVA"
+                className="h-10 w-auto"
+                onError={(e) => e.target.style.display = "none"}
               />
               <h1 className="text-xl md:text-2xl font-bold text-[#1a8241]">
                 Seguimiento a Tareas - Empresa de Parques y Eventos de Antioquia ACTIVA
@@ -452,25 +644,28 @@
           </header>
 
           <div className="flex flex-1 overflow-hidden relative">
-            
-            {/* Pantalla de carga inicial encima de todo */}
+
             {isLoadingInitial && (
-              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center" role="status" aria-live="polite">
                 <i data-lucide="refresh-cw" className="w-10 h-10 text-[#1a8241] animate-spin mb-4"></i>
                 <p className="text-gray-600 font-semibold">Cargando base de datos...</p>
               </div>
             )}
 
-            <aside className="w-64 bg-white hidden md:flex flex-col border-r border-gray-200 shadow-sm z-10">
+            <aside className="w-64 bg-white hidden md:flex flex-col border-r border-gray-200 shadow-sm z-10" aria-label="Departamentos">
               <ul className="space-y-1 py-4 flex-1 overflow-y-auto">
                 {DEPARTMENTS.map(dept => (
-                  <li 
+                  <li
                     key={dept}
                     onClick={() => setSelectedDept(dept)}
-                    className={`px-6 py-3 cursor-pointer transition-colors text-sm font-medium border-l-4 ${
-                      selectedDept === dept 
-                      ? 'border-[#1a8241] text-[#1a8241] bg-green-50' 
-                      : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedDept(dept); } }}
+                    tabIndex={0}
+                    role="button"
+                    aria-pressed={selectedDept === dept}
+                    className={`px-6 py-3 cursor-pointer transition-colors text-sm font-medium border-l-4 focus:outline-none focus:ring-2 focus:ring-[#1a8241] focus:ring-inset ${
+                      selectedDept === dept
+                      ? "border-[#1a8241] text-[#1a8241] bg-green-50"
+                      : "border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                     }`}
                   >
                     {dept}
@@ -480,19 +675,19 @@
             </aside>
 
             <main className="flex-1 p-6 overflow-y-auto">
-              
+
               <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap justify-between items-center mb-6 gap-6">
                 <div className="flex gap-4">
-                  <button className="p-2 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors">
+                  <button className="p-2 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors" aria-label="Filtros">
                     <i data-lucide="filter" className="w-5 h-5"></i>
                   </button>
-                  <button className="p-2 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors">
+                  <button className="p-2 bg-gray-50 border border-gray-200 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors" aria-label="Abrir externo">
                     <i data-lucide="external-link" className="w-5 h-5"></i>
                   </button>
                 </div>
 
                 <div className="flex items-center gap-8 lg:gap-16">
-                  <GaugeChart value={completedTasks} total={totalTasks} />
+                  <GaugeChart value={taskStats.completed} total={taskStats.total} />
                   <div className="flex flex-col items-center">
                     <span className="text-[#84cc16] text-5xl font-bold">{completionPercentage} %</span>
                     <span className="text-[#0c4a6e] font-semibold mt-1">% de terminación</span>
@@ -500,13 +695,13 @@
                 </div>
 
                 <div className="w-40 h-40 rounded-full border-4 border-gray-50 overflow-hidden shadow-md hidden lg:block bg-gray-100">
-                  <img 
-                    src={PROFILE_IMAGES[selectedDept] || PROFILE_IMAGES["Todas las Tareas"]} 
-                    alt="Perfil" 
-                    className="w-full h-full object-cover object-top" 
-                    onError={(e) => { 
-                      e.target.onerror = null; 
-                      e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YxZjVmOSIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiM5Y2EzYWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5Gb3RvPC90ZXh0Pjwvc3ZnPg=='; 
+                  <img
+                    src={PROFILE_IMAGES[selectedDept] || PROFILE_IMAGES["Todas las Tareas"]}
+                    alt={`Imagen de ${selectedDept}`}
+                    className="w-full h-full object-cover object-top"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YxZjVmOSIvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiM5Y2EzYWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5Gb3RvPC90ZXh0Pjwvc3ZnPg==";
                     }}
                   />
                 </div>
@@ -519,19 +714,19 @@
                   <div className="xl:col-span-4 grid grid-cols-2 gap-4">
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
                       <div className="w-12 h-12 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><i data-lucide="clipboard-list" className="w-6 h-6"></i></div>
-                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Total</p><p className="text-2xl font-bold text-gray-800">{totalTasks}</p></div>
+                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Total</p><p className="text-2xl font-bold text-gray-800">{taskStats.total}</p></div>
                     </div>
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
                       <div className="w-12 h-12 rounded-lg bg-green-50 text-[#1a8241] flex items-center justify-center"><i data-lucide="check-circle" className="w-6 h-6"></i></div>
-                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Completas</p><p className="text-2xl font-bold text-gray-800">{completedTasks}</p></div>
+                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Completas</p><p className="text-2xl font-bold text-gray-800">{taskStats.completed}</p></div>
                     </div>
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
                       <div className="w-12 h-12 rounded-lg bg-yellow-50 text-yellow-600 flex items-center justify-center"><i data-lucide="clock" className="w-6 h-6"></i></div>
-                      <div><p className="text-gray-500 text-xs font-semibold uppercase">En Proceso</p><p className="text-2xl font-bold text-gray-800">{inProgressTasks}</p></div>
+                      <div><p className="text-gray-500 text-xs font-semibold uppercase">En Proceso</p><p className="text-2xl font-bold text-gray-800">{taskStats.inProgress}</p></div>
                     </div>
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 hover:shadow-md transition-shadow">
                       <div className="w-12 h-12 rounded-lg bg-red-50 text-red-600 flex items-center justify-center"><i data-lucide="alert-triangle" className="w-6 h-6"></i></div>
-                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Retrasadas</p><p className="text-2xl font-bold text-gray-800">{delayedTasks}</p></div>
+                      <div><p className="text-gray-500 text-xs font-semibold uppercase">Retrasadas</p><p className="text-2xl font-bold text-gray-800">{taskStats.delayed}</p></div>
                     </div>
                   </div>
 
@@ -557,8 +752,8 @@
                     Listado de Tareas {selectedDept !== "Todas las Tareas" && `- ${selectedDept}`}
                   </h2>
                   {hasActiveFilters && (
-                    <button 
-                      onClick={() => setColumnFilters({})} 
+                    <button
+                      onClick={() => setColumnFilters({})}
                       className="flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-semibold transition-colors"
                     >
                       <i data-lucide="x" className="w-3 h-3"></i> Limpiar filtros
@@ -567,7 +762,7 @@
                 </div>
                 <div className="flex gap-3 items-center">
                   {isSyncing && (
-                    <span className="text-xs text-gray-500 flex items-center gap-1 mr-2 bg-gray-100 px-2 py-1 rounded-md">
+                    <span className="text-xs text-gray-500 flex items-center gap-1 mr-2 bg-gray-100 px-2 py-1 rounded-md" aria-live="polite">
                       <i data-lucide="refresh-cw" className="w-3 h-3 animate-spin"></i> Guardando...
                     </span>
                   )}
@@ -582,17 +777,17 @@
                   <table className="w-full text-sm text-left border-collapse">
                     <thead className="bg-[#1a8241] text-white">
                       <tr>
-                        {renderHeader('responsablePrincipal', 'RESP. PRINCIPAL')}
-                        {renderHeader('responsableSecundario', 'RESP. SECUNDARIO')}
-                        {renderHeader('indicador', 'INDICADOR')}
-                        {renderHeader('compromiso', 'COMPROMISO/DECISIONES', 'min-w-[250px] max-w-[300px]')}
-                        {renderHeader('fechaInicio', 'FECHA INICIO')}
-                        {renderHeader('fechaFin', 'FECHA FIN')}
-                        {renderHeader('estado', 'ESTADO')}
-                        {renderHeader('observaciones', 'OBSERVACIONES', 'min-w-[150px] max-w-[200px]')}
-                        {renderHeader('avance', '% AVANCE', 'text-center')}
-                        {renderHeader('contexto', 'CONTEXTO', 'min-w-[200px] max-w-[250px]')}
-                        <th className="p-3 text-center">ACCIONES</th>
+                        {renderHeader("responsablePrincipal", "RESP. PRINCIPAL")}
+                        {renderHeader("responsableSecundario", "RESP. SECUNDARIO")}
+                        {renderHeader("indicador", "INDICADOR")}
+                        {renderHeader("compromiso", "COMPROMISO/DECISIONES", "min-w-[250px] max-w-[300px]")}
+                        {renderHeader("fechaInicio", "FECHA INICIO")}
+                        {renderHeader("fechaFin", "FECHA FIN")}
+                        {renderHeader("estado", "ESTADO")}
+                        {renderHeader("observaciones", "OBSERVACIONES", "min-w-[150px] max-w-[200px]")}
+                        {renderHeader("avance", "% AVANCE", "text-center")}
+                        {renderHeader("contexto", "CONTEXTO", "min-w-[200px] max-w-[250px]")}
+                        <th className="p-3 text-center" scope="col">ACCIONES</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -600,10 +795,10 @@
                         <tr><td colSpan="11" className="text-center p-8 text-gray-500 bg-gray-50">No hay tareas que coincidan con los filtros.</td></tr>
                       ) : (
                         filteredTasks.map((task, index) => {
-                          const avanceNum = Math.min(Math.max(parseInt(task.avance) || 0, 0), 100);
-                          
+                          const avanceNum = Math.min(Math.max(parseInt(task.avance, 10) || 0, 0), 100);
+
                           return (
-                            <tr key={task.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-green-50 transition-colors border-b border-gray-100 last:border-0`}>
+                            <tr key={task.id} className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-green-50 transition-colors border-b border-gray-100 last:border-0`}>
                               <td className="p-3 text-gray-700">{task.responsablePrincipal}</td>
                               <td className="p-3 text-gray-700">{task.responsableSecundario}</td>
                               <td className="p-3 font-semibold text-[#1a8241]">{task.indicador || "-"}</td>
@@ -612,10 +807,10 @@
                               <td className="p-3 text-gray-600 whitespace-nowrap">{task.fechaFin}</td>
                               <td className="p-3 text-center">
                                  <span className={`px-2 py-1 rounded-md text-xs font-bold whitespace-nowrap ${
-                                   task.estado === 'Finalizado' ? 'bg-green-100 text-green-700' :
-                                   task.estado === 'En Progreso' ? 'bg-blue-100 text-blue-700' :
-                                   task.estado === 'Retrasado' ? 'bg-red-100 text-red-700' :
-                                   'bg-yellow-100 text-yellow-700'
+                                   task.estado === "Finalizado" ? "bg-green-100 text-green-700" :
+                                   task.estado === "En Progreso" ? "bg-blue-100 text-blue-700" :
+                                   task.estado === "Retrasado" ? "bg-red-100 text-red-700" :
+                                   "bg-yellow-100 text-yellow-700"
                                  }`}>
                                    {task.estado}
                                  </span>
@@ -623,7 +818,7 @@
                               <td className="p-3 text-gray-600 text-xs max-w-[200px] break-words whitespace-normal">{task.observaciones}</td>
                               <td className="p-3 min-w-[100px]">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div className="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow={avanceNum} aria-valuemin="0" aria-valuemax="100">
                                     <div className="bg-[#1a8241] h-2 rounded-full" style={{width: `${avanceNum}%`}}></div>
                                   </div>
                                   <span className="text-xs font-bold text-gray-700 w-8">{avanceNum}%</span>
@@ -631,8 +826,8 @@
                               </td>
                               <td className="p-3 text-gray-600 text-xs max-w-[250px] break-words whitespace-normal">{task.contexto}</td>
                               <td className="p-3 text-center space-x-1 whitespace-nowrap">
-                                <button onClick={() => openModal(task)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"><i data-lucide="edit-2" className="w-4 h-4"></i></button>
-                                <button onClick={() => handleDelete(task.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                <button onClick={() => openModal(task)} aria-label={`Editar tarea: ${task.compromiso}`} title="Editar" className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"><i data-lucide="edit-2" className="w-4 h-4"></i></button>
+                                <button onClick={() => handleDelete(task.id)} aria-label={`Eliminar tarea: ${task.compromiso}`} title="Eliminar" className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
                               </td>
                             </tr>
                           );
@@ -646,38 +841,48 @@
             </main>
           </div>
 
-          {/* --- FORMULARIO REDISEÑADO --- */}
+          {/* MODAL DE EDICIÓN */}
           {isModalOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200" onClick={() => setIsModalOpen(false)}>
-              <div className="bg-white border border-gray-200 rounded-[18px] p-8 w-full max-w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-4 duration-200" onClick={e => e.stopPropagation()}>
-                
-                <h2 className="text-3xl font-serif mb-1 text-gray-900">
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 anim-fade"
+              onClick={closeModal}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
+            >
+              <div
+                ref={modalRef}
+                className="bg-white border border-gray-200 rounded-[18px] p-8 w-full max-w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl anim-slide-up"
+                onClick={e => e.stopPropagation()}
+              >
+
+                <h2 id="modal-title" className="text-3xl font-serif mb-1 text-gray-900">
                   {editingTask ? <>Editar <em className="text-[#1a8241] italic">actividad</em></> : <>Nueva <em className="text-[#1a8241] italic">actividad</em></>}
                 </h2>
                 <p className="text-[13px] text-gray-500 mb-6">Completa los detalles. Puedes editarlos en cualquier momento.</p>
 
                 <form onSubmit={handleSaveTask}>
-                  
+
                   <div className="mb-4">
-                    <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Compromiso / Decisiones *</label>
-                    <input name="compromiso" required defaultValue={editingTask?.compromiso || ''} autoFocus placeholder="Ej. Realizar mejoras al formato..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                    <label htmlFor="form-compromiso" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Compromiso / Decisiones *</label>
+                    <input id="form-compromiso" name="compromiso" required defaultValue={editingTask?.compromiso || ""} autoFocus placeholder="Ej. Realizar mejoras al formato..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                   </div>
 
                   <div className="mb-4">
-                    <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Contexto</label>
-                    <textarea name="contexto" defaultValue={editingTask?.contexto || ''} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y" />
+                    <label htmlFor="form-contexto" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Contexto</label>
+                    <textarea id="form-contexto" name="contexto" defaultValue={editingTask?.contexto || ""} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Principal</label>
-                      <select name="responsablePrincipal" defaultValue={editingTask?.responsablePrincipal || DEPARTMENTS[1]} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                      <label htmlFor="form-resp-principal" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Principal</label>
+                      <select id="form-resp-principal" name="responsablePrincipal" defaultValue={editingTask?.responsablePrincipal || DEPARTMENTS[1]} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
                         {DEPARTMENTS.slice(1, -1).map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Secundario</label>
-                      <select name="responsableSecundario" defaultValue={editingTask?.responsableSecundario || "Ninguno"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                      <label htmlFor="form-resp-secundario" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Secundario</label>
+                      <select id="form-resp-secundario" name="responsableSecundario" defaultValue={editingTask?.responsableSecundario || "Ninguno"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
                         <option value="Ninguno">Ninguno</option>
                         {DEPARTMENTS.slice(1, -1).map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
@@ -685,8 +890,8 @@
                   </div>
 
                   <div className="mb-4">
-                    <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Indicador Estratégico</label>
-                    <select name="indicador" defaultValue={editingTask?.indicador || ''} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                    <label htmlFor="form-indicador" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Indicador Estratégico</label>
+                    <select id="form-indicador" name="indicador" defaultValue={editingTask?.indicador || ""} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
                       <option value="">Seleccione un indicador de la lista...</option>
                       {indicadoresList.map((ind, i) => (
                         <option key={i} value={ind}>{ind}</option>
@@ -696,19 +901,19 @@
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Inicio</label>
-                      <input type="date" name="fechaInicio" required defaultValue={editingTask?.fechaInicio || ''} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                      <label htmlFor="form-fecha-inicio" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Inicio</label>
+                      <input id="form-fecha-inicio" type="date" name="fechaInicio" required defaultValue={editingTask?.fechaInicio || ""} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Límite</label>
-                      <input type="date" name="fechaFin" required defaultValue={editingTask?.fechaFin || ''} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                      <label htmlFor="form-fecha-fin" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Límite</label>
+                      <input id="form-fecha-fin" type="date" name="fechaFin" required defaultValue={editingTask?.fechaFin || ""} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Estado</label>
-                      <select name="estado" defaultValue={editingTask?.estado || 'Pendiente'} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                      <label htmlFor="form-estado" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Estado</label>
+                      <select id="form-estado" name="estado" defaultValue={editingTask?.estado || "Pendiente"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
                         <option value="Pendiente">Pendiente</option>
                         <option value="En Progreso">En Progreso</option>
                         <option value="Finalizado">Finalizado</option>
@@ -716,25 +921,25 @@
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Avance · {modalAvance}%</label>
+                      <label htmlFor="form-avance" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Avance · {modalAvance}%</label>
                       <div className="flex items-center gap-3 pt-2">
-                        <input type="range" name="avance" min="0" max="100" step="5" value={modalAvance} onChange={e => setModalAvance(e.target.value)} className="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#1a8241]" />
+                        <input id="form-avance" type="range" name="avance" min="0" max="100" step="5" value={modalAvance} onChange={e => setModalAvance(e.target.value)} className="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#1a8241]" />
                         <span className="font-mono text-[13px] min-w-[35px] text-right text-gray-800">{modalAvance}%</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="mb-6">
-                    <label className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Observaciones</label>
-                    <input name="observaciones" defaultValue={editingTask?.observaciones || ''} placeholder="Opcional..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                    <label htmlFor="form-observaciones" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Observaciones</label>
+                    <input id="form-observaciones" name="observaciones" defaultValue={editingTask?.observaciones || ""} placeholder="Opcional..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                   </div>
 
                   <div className="flex justify-end gap-2 mt-6">
-                    <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-lg text-[13px] font-medium text-gray-600 border border-gray-200 bg-transparent hover:border-[#1a8241] hover:text-[#1a8241] transition-all flex items-center gap-2">
+                    <button type="button" onClick={closeModal} className="px-4 py-2.5 rounded-lg text-[13px] font-medium text-gray-600 border border-gray-200 bg-transparent hover:border-[#1a8241] hover:text-[#1a8241] transition-all flex items-center gap-2">
                       <i data-lucide="x" className="w-4 h-4"></i> Cancelar
                     </button>
-                    <button type="submit" className="px-4 py-2.5 rounded-lg text-[13px] font-medium bg-[#1a8241] text-white hover:bg-green-700 hover:-translate-y-[1px] transition-all flex items-center gap-2 shadow-sm">
-                      <i data-lucide="check" className="w-4 h-4"></i> {editingTask ? "Guardar" : "Crear"}
+                    <button type="submit" disabled={isSyncing} className="px-4 py-2.5 rounded-lg text-[13px] font-medium bg-[#1a8241] text-white hover:bg-green-700 hover:-translate-y-[1px] transition-all flex items-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none">
+                      <i data-lucide={isSyncing ? "refresh-cw" : "check"} className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`}></i> {editingTask ? "Guardar" : "Crear"}
                     </button>
                   </div>
 
@@ -743,12 +948,20 @@
             </div>
           )}
 
+          {toast && (
+            <Toast
+              key={toast.key}
+              message={toast.message}
+              type={toast.type}
+              onClose={() => setToast(null)}
+            />
+          )}
+
         </div>
       );
     }
 
-    // Renderizar la app en el div 'root'
-    const root = ReactDOM.createRoot(document.getElementById('root'));
+    const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
   </script>
 </body>
