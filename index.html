@@ -404,7 +404,7 @@
       const [columnFilters, setColumnFilters] = useState({});
       const [modalAvance, setModalAvance] = useState(0);
       const [toast, setToast] = useState(null); // {message, type}
-      const [sortConfig, setSortConfig] = useState({ key: null, direction: null }); // null | 'asc' | 'desc'
+      const [sortConfig, setSortConfig] = useState({ key: "avance", direction: "asc" });
       const [highlightedTaskId, setHighlightedTaskId] = useState(null);
       const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -420,6 +420,8 @@
       const [isLoggingIn, setIsLoggingIn] = useState(false);
 
       const isAdmin = currentUser?.role === "Administrador";
+      // Edición restringida: no-admin editando una tarea existente solo puede tocar observaciones y avance
+      const isRestrictedEdit = !isAdmin && !!editingTask;
 
       const [activeFilter, setActiveFilter] = useState(null);
       const [filterSearch, setFilterSearch] = useState("");
@@ -1283,16 +1285,23 @@
                 </h2>
                 <p className="text-[13px] text-gray-500 mb-6">Completa los detalles. Puedes editarlos en cualquier momento.</p>
 
+                {isRestrictedEdit && (
+                  <div className="mb-5 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-lg flex items-start gap-2">
+                    <i data-lucide="info" className="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                    <span>Tu rol solo puede actualizar <strong>Observaciones</strong> y <strong>% Avance</strong>. Los demás campos los gestiona el administrador.</span>
+                  </div>
+                )}
+
                 <form onSubmit={handleSaveTask}>
 
                   <div className="mb-4">
                     <label htmlFor="form-compromiso" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Compromiso / Decisiones *</label>
-                    <input id="form-compromiso" name="compromiso" required defaultValue={editingTask?.compromiso || ""} autoFocus placeholder="Ej. Realizar mejoras al formato..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                    <input id="form-compromiso" name="compromiso" required disabled={isRestrictedEdit} defaultValue={editingTask?.compromiso || ""} autoFocus={!isRestrictedEdit} placeholder="Ej. Realizar mejoras al formato..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                   </div>
 
                   <div className="mb-4">
                     <label htmlFor="form-contexto" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Contexto *</label>
-                    <textarea id="form-contexto" name="contexto" required defaultValue={editingTask?.contexto || ""} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y" />
+                    <textarea id="form-contexto" name="contexto" required disabled={isRestrictedEdit} defaultValue={editingTask?.contexto || ""} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1314,7 +1323,7 @@
                     </div>
                     <div>
                       <label htmlFor="form-resp-secundario" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Secundario</label>
-                      <select id="form-resp-secundario" name="responsableSecundario" defaultValue={editingTask?.responsableSecundario || "Ninguno"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                      <select id="form-resp-secundario" name="responsableSecundario" disabled={isRestrictedEdit} defaultValue={editingTask?.responsableSecundario || "Ninguno"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed">
                         <option value="Ninguno">Ninguno</option>
                         {DEPARTMENTS.slice(1, -1).map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
@@ -1323,7 +1332,7 @@
 
                   <div className="mb-4">
                     <label htmlFor="form-indicador" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Indicador Estratégico *</label>
-                    <select id="form-indicador" name="indicador" required defaultValue={editingTask?.indicador || ""} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                    <select id="form-indicador" name="indicador" required disabled={isRestrictedEdit} defaultValue={editingTask?.indicador || ""} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed">
                         <option value="" disabled>Seleccione un indicador de la lista...</option>
                         {indicadoresList.map((ind, i) => (
                           <option key={i} value={ind}>{ind}</option>
@@ -1334,18 +1343,18 @@
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
                       <label htmlFor="form-fecha-inicio" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Inicio *</label>
-                      <input id="form-fecha-inicio" type="date" name="fechaInicio" required defaultValue={toInputDateValue(editingTask?.fechaInicio || "")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                      <input id="form-fecha-inicio" type="date" name="fechaInicio" required disabled={isRestrictedEdit} defaultValue={toInputDateValue(editingTask?.fechaInicio || "")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                     </div>
                     <div>
                       <label htmlFor="form-fecha-fin" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Fecha Límite *</label>
-                      <input id="form-fecha-fin" type="date" name="fechaFin" required defaultValue={toInputDateValue(editingTask?.fechaFin || "")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                      <input id="form-fecha-fin" type="date" name="fechaFin" required disabled={isRestrictedEdit} defaultValue={toInputDateValue(editingTask?.fechaFin || "")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div>
                       <label htmlFor="form-estado" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Estado *</label>
-                      <select id="form-estado" name="estado" required defaultValue={normalizeEstado(editingTask?.estado || "En Progreso")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all">
+                      <select id="form-estado" name="estado" required disabled={isRestrictedEdit} defaultValue={normalizeEstado(editingTask?.estado || "En Progreso")} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed">
                         <option value="En Progreso">En Progreso</option>
                         <option value="Terminado">Terminado</option>
                       </select>
