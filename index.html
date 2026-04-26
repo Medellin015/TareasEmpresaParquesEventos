@@ -15,9 +15,11 @@
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes slideInRight { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes slideInLeft { from { opacity: 0; transform: translateX(-100%); } to { opacity: 1; transform: translateX(0); } }
     .anim-fade { animation: fadeIn 200ms ease-out; }
     .anim-slide-up { animation: slideUp 220ms ease-out; }
     .anim-slide-in-right { animation: slideInRight 200ms ease-out; }
+    .anim-slide-in-left { animation: slideInLeft 220ms ease-out; }
   </style>
 </head>
 <body>
@@ -205,6 +207,30 @@
       if (estado === "Terminado" || estado === "En Progreso") return estado;
       return "En Progreso"; // default seguro
     }
+
+    // Convierte texto plano a JSX, transformando URLs http/https en enlaces clickeables.
+    function renderTextWithLinks(text) {
+      if (!text || typeof text !== "string") return text || "";
+      const urlRegex = /(https?:\/\/\S+)/g;
+      const parts = text.split(urlRegex);
+      return parts.map((part, i) => {
+        if (part && /^https?:\/\//.test(part)) {
+          return (
+            <a
+              key={i}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="text-blue-600 underline hover:text-blue-800 break-all"
+            >
+              {part}
+            </a>
+          );
+        }
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+      });
+    }
     // Acepta: Date object, "YYYY-MM-DD", ISO string, "Tue Jan 13 2026 03:00:00 GMT-0500..." (Date.toString()), etc.
     function formatDateDDMMYYYY(value) {
       if (value === null || value === undefined || value === "") return "";
@@ -285,6 +311,7 @@
       const [toast, setToast] = useState(null); // {message, type}
       const [sortConfig, setSortConfig] = useState({ key: null, direction: null }); // null | 'asc' | 'desc'
       const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+      const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
       const [activeFilter, setActiveFilter] = useState(null);
       const [filterSearch, setFilterSearch] = useState("");
@@ -314,7 +341,7 @@
       // no en cada render del componente.
       useEffect(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
-      }, [tasks, selectedDept, isModalOpen, activeFilter, columnFilters, isSyncing, isLoadingInitial, toast, sortConfig, highlightedTaskId]);
+      }, [tasks, selectedDept, isModalOpen, activeFilter, columnFilters, isSyncing, isLoadingInitial, toast, sortConfig, highlightedTaskId, isMobileMenuOpen]);
 
       // ESC cierra el modal y los dropdowns de filtro
       useEffect(() => {
@@ -322,11 +349,12 @@
           if (e.key === "Escape") {
             if (isModalOpen) closeModal();
             else if (activeFilter) setActiveFilter(null);
+            else if (isMobileMenuOpen) setIsMobileMenuOpen(false);
           }
         };
         document.addEventListener("keydown", onKey);
         return () => document.removeEventListener("keydown", onKey);
-      }, [isModalOpen, activeFilter, closeModal]);
+      }, [isModalOpen, activeFilter, isMobileMenuOpen, closeModal]);
 
       // Click fuera del filtro lo cierra
       useEffect(() => {
@@ -346,7 +374,8 @@
         const raf = requestAnimationFrame(() => {
           const rowEl = document.querySelector(`tr[data-task-id="${highlightedTaskId}"]`);
           if (rowEl) {
-            rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            // 'nearest' evita scroll innecesario si la fila ya está visible
+            rowEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
           }
         });
         // Mantener highlight unos segundos y luego limpiar
@@ -576,10 +605,8 @@
         setEditingTask(null);
         setIsSyncing(true);
 
-        // Si es nueva, marcar para scroll + highlight
-        if (!wasEditing) {
-          setHighlightedTaskId(newTask.id);
-        }
+        // Marcamos la tarea para scroll + highlight, ya sea creación o edición
+        setHighlightedTaskId(newTask.id);
 
         if (!GOOGLE_SHEETS_WEBAPP_URL) {
           setIsSyncing(false);
@@ -769,7 +796,7 @@
                       )}
                    </div>
                    <div className="p-2 border-t border-gray-100 bg-gray-50 flex justify-end rounded-b-lg">
-                      <button onClick={() => setActiveFilter(null)} className="text-xs bg-[#1a8241] hover:bg-green-800 text-white px-4 py-1.5 rounded-md shadow-sm transition-colors font-medium">Cerrar</button>
+                      <button onClick={() => setActiveFilter(null)} className="text-xs bg-[#1a8241] hover:bg-green-800 text-white px-4 py-1.5 rounded-md shadow-sm transition-colors font-medium">Aplicar</button>
                    </div>
                 </div>
              )}
@@ -784,16 +811,24 @@
       return (
         <div className="min-h-screen bg-[#f8f9fa] font-sans text-gray-800 flex flex-col">
 
-          <header className="bg-[#e0e1dd] py-3 px-6 flex justify-between items-center border-b border-gray-200 shadow-sm z-20">
-            <div className="flex items-center gap-4">
+          <header className="bg-[#e0e1dd] py-3 px-4 sm:px-6 flex justify-between items-center border-b border-gray-200 shadow-sm z-20">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+              <button
+                className="md:hidden p-2 -ml-1 text-[#1a8241] hover:bg-black/5 rounded-lg transition-colors flex-shrink-0"
+                onClick={() => setIsMobileMenuOpen(true)}
+                aria-label="Abrir menú de departamentos"
+              >
+                <i data-lucide="menu" className="w-6 h-6"></i>
+              </button>
               <img
                 src="logo.png"
                 alt="Logo ACTIVA"
-                className="h-10 w-auto"
+                className="h-8 sm:h-10 w-auto flex-shrink-0"
                 onError={(e) => e.target.style.display = "none"}
               />
-              <h1 className="text-xl md:text-2xl font-bold text-[#1a8241]">
-                Seguimiento a Tareas - Empresa de Parques y Eventos de Antioquia ACTIVA
+              <h1 className="text-base sm:text-xl md:text-2xl font-bold text-[#1a8241] truncate leading-tight">
+                <span className="hidden sm:inline">Seguimiento a Tareas - Empresa de Parques y Eventos de Antioquia ACTIVA</span>
+                <span className="sm:hidden">Seguimiento - ACTIVA</span>
               </h1>
             </div>
           </header>
@@ -829,7 +864,44 @@
               </ul>
             </aside>
 
-            <main className="flex-1 p-6 overflow-y-auto">
+            {/* Drawer móvil: solo se muestra en pantallas <md */}
+            {isMobileMenuOpen && (
+              <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menú de departamentos">
+                <div
+                  className="absolute inset-0 bg-black/50 anim-fade"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                ></div>
+                <aside className="absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-white shadow-2xl flex flex-col anim-slide-in-left">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-[#e0e1dd]">
+                    <span className="text-sm font-bold text-[#1a8241]">Departamentos</span>
+                    <button
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      aria-label="Cerrar menú"
+                      className="p-1 text-gray-500 hover:text-gray-800 hover:bg-black/5 rounded"
+                    >
+                      <i data-lucide="x" className="w-5 h-5"></i>
+                    </button>
+                  </div>
+                  <ul className="space-y-1 py-3 flex-1 overflow-y-auto">
+                    {DEPARTMENTS.map(dept => (
+                      <li
+                        key={dept}
+                        onClick={() => { setSelectedDept(dept); setIsMobileMenuOpen(false); }}
+                        className={`px-5 py-3 cursor-pointer transition-colors text-sm font-medium border-l-4 ${
+                          selectedDept === dept
+                          ? "border-[#1a8241] text-[#1a8241] bg-green-50"
+                          : "border-transparent text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {dept}
+                      </li>
+                    ))}
+                  </ul>
+                </aside>
+              </div>
+            )}
+
+            <main className="flex-1 p-3 sm:p-6 overflow-y-auto">
 
               {selectedDept !== "Indicadores" && (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap justify-between items-center mb-6 gap-6">
@@ -974,7 +1046,7 @@
                                    );
                                  })()}
                               </td>
-                              <td className="p-3 text-gray-600 text-xs max-w-[200px] break-words whitespace-normal">{task.observaciones}</td>
+                              <td className="p-3 text-gray-600 text-xs max-w-[200px] break-words whitespace-normal">{renderTextWithLinks(task.observaciones)}</td>
                               <td className="p-3 min-w-[100px]">
                                 <div className="flex items-center gap-2">
                                   <div className="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow={avanceNum} aria-valuemin="0" aria-valuemax="100">
@@ -1003,7 +1075,7 @@
           {/* MODAL DE EDICIÓN */}
           {isModalOpen && (
             <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 anim-fade"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 anim-fade"
               onClick={closeModal}
               role="dialog"
               aria-modal="true"
@@ -1011,11 +1083,11 @@
             >
               <div
                 ref={modalRef}
-                className="bg-white border border-gray-200 rounded-[18px] p-8 w-full max-w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl anim-slide-up"
+                className="bg-white border border-gray-200 rounded-t-[18px] sm:rounded-[18px] p-5 sm:p-8 w-full max-w-[560px] max-h-[92vh] overflow-y-auto shadow-2xl anim-slide-up"
                 onClick={e => e.stopPropagation()}
               >
 
-                <h2 id="modal-title" className="text-3xl font-serif mb-1 text-gray-900">
+                <h2 id="modal-title" className="text-2xl sm:text-3xl font-serif mb-1 text-gray-900">
                   {editingTask ? <>Editar <em className="text-[#1a8241] italic">actividad</em></> : <>Nueva <em className="text-[#1a8241] italic">actividad</em></>}
                 </h2>
                 <p className="text-[13px] text-gray-500 mb-6">Completa los detalles. Puedes editarlos en cualquier momento.</p>
