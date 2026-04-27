@@ -198,8 +198,14 @@
                   </div>
                 </div>
               </div>
-              <span className="text-[10px] text-gray-500 mt-2 text-center truncate w-full px-1" title={item.label}>
-                {item.label.split(' ')[0]}
+              <span className="text-[10px] text-gray-500 mt-2 text-center w-full px-0.5 leading-tight whitespace-normal break-words" title={item.label}>
+                {item.label === "Dirección Administrativa y Financiera"
+                  ? "Dir. Adm. y Financiera"
+                  : item.label === "Dirección Jurídica"
+                    ? "Dir. Jurídica"
+                    : item.label === "Subgerencia Comercial"
+                      ? "Sub. Comercial"
+                      : item.label}
               </span>
             </div>
           ))}
@@ -1245,7 +1251,9 @@
                                 {userCanModifyTask(currentUser, task) ? (
                                   <>
                                     <button onClick={() => openModal(task)} aria-label={`Editar tarea: ${task.compromiso}`} title="Editar" className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"><i data-lucide="edit-2" className="w-4 h-4"></i></button>
-                                    <button onClick={() => handleDelete(task.id)} aria-label={`Eliminar tarea: ${task.compromiso}`} title="Eliminar" className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                    {isAdmin && (
+                                      <button onClick={() => handleDelete(task.id)} aria-label={`Eliminar tarea: ${task.compromiso}`} title="Eliminar" className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                    )}
                                   </>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[10px] text-gray-400 italic px-1.5" title="Solo puede modificar el responsable principal o un administrador">
@@ -1369,8 +1377,8 @@
                   </div>
 
                   <div className="mb-6">
-                    <label htmlFor="form-observaciones" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Observaciones *</label>
-                    <input id="form-observaciones" name="observaciones" required defaultValue={editingTask?.observaciones || ""} placeholder="Agrega tus observaciones..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                    <label htmlFor="form-observaciones" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Observaciones</label>
+                    <input id="form-observaciones" name="observaciones" defaultValue={editingTask?.observaciones || ""} placeholder="Opcional..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                   </div>
 
                   <div className="flex justify-end gap-2 mt-6">
