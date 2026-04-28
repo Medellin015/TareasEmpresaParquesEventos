@@ -402,7 +402,17 @@
     function App() {
       const [tasks, setTasks] = useState(INITIAL_TASKS);
       const [indicadoresList, setIndicadoresList] = useState([]);
-      const [selectedDept, setSelectedDept] = useState("Todas las Tareas");
+      const [selectedDept, setSelectedDept] = useState(() => {
+        // Si hay sesión guardada de un rol no-admin, arrancar filtrado por su depto
+        try {
+          const stored = sessionStorage.getItem("activa_user");
+          if (stored) {
+            const u = JSON.parse(stored);
+            if (u && u.role && u.role !== "Administrador") return u.role;
+          }
+        } catch (e) {}
+        return "Todas las Tareas";
+      });
       const [isModalOpen, setIsModalOpen] = useState(false);
       const [editingTask, setEditingTask] = useState(null);
       const [isSyncing, setIsSyncing] = useState(false);
@@ -454,6 +464,9 @@
           const user = { role, password };
           try { sessionStorage.setItem("activa_user", JSON.stringify(user)); } catch (e) {}
           setCurrentUser(user);
+          // Para roles no-admin, fijar el filtro a su propio departamento
+          if (role !== "Administrador") setSelectedDept(role);
+          else setSelectedDept("Todas las Tareas");
         } catch (e) {
           setLoginError(e.message);
         } finally {
@@ -465,6 +478,7 @@
         try { sessionStorage.removeItem("activa_user"); } catch (e) {}
         setCurrentUser(null);
         setLoginError(null);
+        setSelectedDept("Todas las Tareas");
       }, []);
 
       const openModal = (task = null) => {
@@ -566,7 +580,7 @@
       const filteredTasks = useMemo(() => {
         let result = tasks;
         if (selectedDept !== "Todas las Tareas" && selectedDept !== "Indicadores") {
-          result = result.filter(t => t.responsablePrincipal === selectedDept || t.responsableSecundario === selectedDept);
+          result = result.filter(t => t.responsablePrincipal === selectedDept);
         }
         Object.keys(columnFilters).forEach(key => {
           const selectedValues = columnFilters[key];
@@ -718,7 +732,22 @@
         e.preventDefault();
         const formData = new FormData(e.target);
 
-        const newTask = {
+        // En edición restringida, los campos deshabilitados no llegan al FormData,
+        // así que tomamos los valores existentes de la tarea para todo excepto
+        // observaciones y avance (los únicos editables por departamentos).
+        const newTask = isRestrictedEdit ? {
+          id: editingTask.id,
+          responsablePrincipal: editingTask.responsablePrincipal || "",
+          responsableSecundario: editingTask.responsableSecundario || "",
+          compromiso: editingTask.compromiso || "",
+          fechaInicio: editingTask.fechaInicio || "",
+          fechaFin: editingTask.fechaFin || "",
+          estado: editingTask.estado || "En Progreso",
+          contexto: editingTask.contexto || "",
+          indicador: editingTask.indicador || "",
+          observaciones: formData.get("observaciones") || "",
+          avance: parseInt(formData.get("avance") || "0", 10)
+        } : {
           id: editingTask ? editingTask.id : generateTaskId(),
           responsablePrincipal: formData.get("responsablePrincipal") || "",
           responsableSecundario: formData.get("responsableSecundario") || "",
@@ -732,8 +761,8 @@
           indicador: formData.get("indicador") || ""
         };
 
-        // Validación cliente
-        if (!newTask.compromiso) {
+        // Validación cliente (solo aplica a admin / creación)
+        if (!isRestrictedEdit && !newTask.compromiso) {
           showToast("El compromiso es obligatorio", "error");
           return;
         }
