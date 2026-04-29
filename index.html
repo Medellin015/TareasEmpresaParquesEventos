@@ -737,6 +737,7 @@
         // observaciones y avance (los únicos editables por departamentos).
         const newTask = isRestrictedEdit ? {
           id: editingTask.id,
+          _isEdit: true,
           responsablePrincipal: editingTask.responsablePrincipal || "",
           responsableSecundario: editingTask.responsableSecundario || "",
           compromiso: editingTask.compromiso || "",
@@ -749,6 +750,7 @@
           avance: parseInt(formData.get("avance") || "0", 10)
         } : {
           id: editingTask ? editingTask.id : generateTaskId(),
+          _isEdit: !!editingTask,
           responsablePrincipal: formData.get("responsablePrincipal") || "",
           responsableSecundario: formData.get("responsableSecundario") || "",
           compromiso: (formData.get("compromiso") || "").trim(),
@@ -789,14 +791,19 @@
         }
 
         try {
+          const requestPayload = {
+            action: "save",
+            task: newTask,
+            user: currentUser?.role,
+            password: currentUser?.password,
+            _t: Date.now()
+          };
+          console.log("[ACTIVA] POST → save", { user: currentUser?.role, taskId: newTask.id, isEdit: newTask._isEdit, avance: newTask.avance });
           const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
             method: "POST",
-            body: JSON.stringify({
-              action: "save",
-              task: newTask,
-              user: currentUser?.role,
-              password: currentUser?.password
-            })
+            cache: "no-store",
+            redirect: "follow",
+            body: JSON.stringify(requestPayload)
           });
 
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -847,17 +854,22 @@
         }
 
         try {
+          console.log("[ACTIVA] POST → delete", { user: currentUser?.role, taskId: id });
           const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, {
             method: "POST",
+            cache: "no-store",
+            redirect: "follow",
             body: JSON.stringify({
               action: "delete",
               id: id,
               user: currentUser?.role,
-              password: currentUser?.password
+              password: currentUser?.password,
+              _t: Date.now()
             })
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const result = await response.json();
+          console.log("[ACTIVA] Respuesta del backend al eliminar:", result);
           if (result.status === "error") throw new Error(result.message || "Error del servidor");
 
           showToast("Tarea eliminada", "success");
