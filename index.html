@@ -801,8 +801,13 @@
 
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const result = await response.json();
+          // Log detallado para diagnóstico
+          console.log("[ACTIVA] Respuesta del backend al guardar:", result);
           if (result.status === "error") {
             throw new Error(result.message || "Error desconocido del servidor");
+          }
+          if (result.status !== "success") {
+            throw new Error("Respuesta inesperada del servidor: " + JSON.stringify(result));
           }
 
           showToast(wasEditing ? "Tarea actualizada" : "Tarea creada", "success");
