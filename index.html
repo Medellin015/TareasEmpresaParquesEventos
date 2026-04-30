@@ -50,6 +50,10 @@
       "Indicadores": "indicadores.png"
     };
 
+    // Identificador de versión del frontend para diagnosticar problemas de caché.
+    const FRONTEND_VERSION = "2026-04-29-v3";
+    console.log("[ACTIVA] Frontend versión:", FRONTEND_VERSION);
+
     const GOOGLE_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzVfa5IF2L728f-tRSlT270ZEsg1RDJ9BX7htrnGzD_3MlNthdew-UIIu3lXw6taRY/exec";
 
     // Lista de roles disponibles para login. Las contraseñas viven solo en el backend.
@@ -559,6 +563,7 @@
             const response = await fetch(GOOGLE_SHEETS_WEBAPP_URL, { signal: controller.signal });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
+            console.log("[ACTIVA] Backend versión recibida:", data.version || "(sin versión)");
             if (data.status === "error") throw new Error(data.message || "Error del servidor");
             if (Array.isArray(data.tasks)) setTasks(data.tasks);
             if (Array.isArray(data.indicadores)) setIndicadoresList(data.indicadores);
@@ -1459,3 +1464,4 @@
   </script>
 </body>
 </html>
+
