@@ -427,6 +427,7 @@
       const [sortConfig, setSortConfig] = useState({ key: "avance", direction: "asc" });
       const [highlightedTaskId, setHighlightedTaskId] = useState(null);
       const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+      const [isSidebarOpen, setIsSidebarOpen] = useState(true); // ESTADO PARA PANEL RETRÁCTIL
 
       // --- Sesión / autenticación ---
       const [currentUser, setCurrentUser] = useState(() => {
@@ -504,7 +505,7 @@
       // no en cada render del componente.
       useEffect(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
-      }, [tasks, selectedDept, isModalOpen, activeFilter, columnFilters, isSyncing, isLoadingInitial, toast, sortConfig, highlightedTaskId, isMobileMenuOpen, currentUser]);
+      }, [tasks, selectedDept, isModalOpen, activeFilter, columnFilters, isSyncing, isLoadingInitial, toast, sortConfig, highlightedTaskId, isMobileMenuOpen, currentUser, isSidebarOpen]);
 
       // ESC cierra el modal y los dropdowns de filtro
       useEffect(() => {
@@ -757,7 +758,7 @@
           id: editingTask ? editingTask.id : generateTaskId(),
           _isEdit: !!editingTask,
           responsablePrincipal: formData.get("responsablePrincipal") || "",
-          responsableSecundario: formData.get("responsableSecundario") || "",
+          responsableSecundario: formData.get("responsableSecundario") || "", // AHORA ES TEXTO
           compromiso: (formData.get("compromiso") || "").trim(),
           fechaInicio: formData.get("fechaInicio") || "",
           fechaFin: formData.get("fechaFin") || "",
@@ -1017,7 +1018,7 @@
                       )}
                    </div>
                    <div className="p-2 border-t border-gray-100 bg-gray-50 flex justify-end rounded-b-lg">
-                      <button onClick={() => setActiveFilter(null)} className="text-xs bg-[#1a8241] hover:bg-green-800 text-white px-4 py-1.5 rounded-md shadow-sm transition-colors font-medium">Aplicar</button>
+                      <button onClick={() => setActiveFilter(null)} className="text-xs bg-[#1a8241] hover:bg-green-800 text-white px-4 py-1.5 rounded-md shadow-sm transition-colors font-medium">Cerrar</button>
                    </div>
                 </div>
              )}
@@ -1039,6 +1040,15 @@
 
           <header className="bg-[#e0e1dd] py-3 px-4 sm:px-6 flex justify-between items-center border-b border-gray-200 shadow-sm z-20 gap-2">
             <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+              {/* --- BOTÓN DE HAMBURGUESA PARA CONTROLAR EL SIDEBAR EN ESCRITORIO --- */}
+              <button
+                className="hidden md:flex p-2 -ml-2 text-[#1a8241] hover:bg-black/5 rounded-lg transition-colors flex-shrink-0"
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                aria-label="Alternar menú lateral"
+              >
+                <i data-lucide="menu" className="w-6 h-6"></i>
+              </button>
+              {/* Botón original para móviles */}
               <button
                 className="md:hidden p-2 -ml-1 text-[#1a8241] hover:bg-black/5 rounded-lg transition-colors flex-shrink-0"
                 onClick={() => setIsMobileMenuOpen(true)}
@@ -1046,6 +1056,7 @@
               >
                 <i data-lucide="menu" className="w-6 h-6"></i>
               </button>
+              
               <img
                 src="logo.png"
                 alt="Logo ACTIVA"
@@ -1084,27 +1095,30 @@
               </div>
             )}
 
-            <aside className="w-64 bg-white hidden md:flex flex-col border-r border-gray-200 shadow-sm z-10" aria-label="Departamentos">
-              <ul className="space-y-1 py-4 flex-1 overflow-y-auto">
-                {DEPARTMENTS.map(dept => (
-                  <li
-                    key={dept}
-                    onClick={() => setSelectedDept(dept)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedDept(dept); } }}
-                    tabIndex={0}
-                    role="button"
-                    aria-pressed={selectedDept === dept}
-                    className={`px-6 py-3 cursor-pointer transition-colors text-sm font-medium border-l-4 focus:outline-none focus:ring-2 focus:ring-[#1a8241] focus:ring-inset ${
-                      selectedDept === dept
-                      ? "border-[#1a8241] text-[#1a8241] bg-green-50"
-                      : "border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                    }`}
-                  >
-                    {dept}
-                  </li>
-                ))}
-              </ul>
-            </aside>
+            {/* Sidebar Lateral en Escritorio - Controlado por isSidebarOpen */}
+            {isSidebarOpen && (
+              <aside className="w-64 bg-white hidden md:flex flex-col border-r border-gray-200 shadow-sm z-10 transition-all duration-300" aria-label="Departamentos">
+                <ul className="space-y-1 py-4 flex-1 overflow-y-auto">
+                  {DEPARTMENTS.map(dept => (
+                    <li
+                      key={dept}
+                      onClick={() => setSelectedDept(dept)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedDept(dept); } }}
+                      tabIndex={0}
+                      role="button"
+                      aria-pressed={selectedDept === dept}
+                      className={`px-6 py-3 cursor-pointer transition-colors text-sm font-medium border-l-4 focus:outline-none focus:ring-2 focus:ring-[#1a8241] focus:ring-inset ${
+                        selectedDept === dept
+                        ? "border-[#1a8241] text-[#1a8241] bg-green-50"
+                        : "border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      }`}
+                    >
+                      {dept}
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            )}
 
             {/* Drawer móvil: solo se muestra en pantallas <md */}
             {isMobileMenuOpen && (
@@ -1143,7 +1157,7 @@
               </div>
             )}
 
-            <main className="flex-1 p-3 sm:p-6 overflow-y-auto">
+            <main className="flex-1 p-3 sm:p-6 overflow-y-auto transition-all duration-300">
 
               {selectedDept !== "Indicadores" && (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap justify-between items-center mb-6 gap-6">
@@ -1359,8 +1373,9 @@
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="form-contexto" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Contexto *</label>
-                    <textarea id="form-contexto" name="contexto" required disabled={isRestrictedEdit} defaultValue={editingTask?.contexto || ""} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
+                    {/* QUITAR REQUIRED DE CONTEXTO Y DEL LABEL */}
+                    <label htmlFor="form-contexto" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Contexto</label>
+                    <textarea id="form-contexto" name="contexto" disabled={isRestrictedEdit} defaultValue={editingTask?.contexto || ""} placeholder="Detalles, contexto, entregables..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all min-h-[80px] resize-y disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1381,11 +1396,9 @@
                       )}
                     </div>
                     <div>
+                      {/* RESPONSABLE SECUNDARIO COMO INPUT TEXT LIBRE */}
                       <label htmlFor="form-resp-secundario" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Resp. Secundario</label>
-                      <select id="form-resp-secundario" name="responsableSecundario" disabled={isRestrictedEdit} defaultValue={editingTask?.responsableSecundario || "Ninguno"} className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed">
-                        <option value="Ninguno">Ninguno</option>
-                        {DEPARTMENTS.slice(1, -1).map(d => <option key={d} value={d}>{d}</option>)}
-                      </select>
+                      <input id="form-resp-secundario" name="responsableSecundario" disabled={isRestrictedEdit} defaultValue={editingTask?.responsableSecundario || ""} placeholder="Nombre o Área..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" />
                     </div>
                   </div>
 
@@ -1429,7 +1442,7 @@
 
                   <div className="mb-6">
                     <label htmlFor="form-observaciones" className="block text-[11px] uppercase tracking-[0.1em] text-gray-500 mb-1.5 font-medium">Observaciones</label>
-                    <input id="form-observaciones" name="observaciones" defaultValue={editingTask?.observaciones || ""} placeholder="Opcional..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
+                    <input id="form-observaciones" name="observaciones" defaultValue={editingTask?.observaciones || ""} placeholder="Agrega tus observaciones..." className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[14px] text-gray-800 focus:outline-none focus:border-[#1a8241] focus:ring-1 focus:ring-[#1a8241] transition-all" />
                   </div>
 
                   <div className="flex justify-end gap-2 mt-6">
